@@ -1,6 +1,6 @@
-/** @type {import('tailwindcss').Config} */
-export default {
-  darkMode: 'class', // <--- ئەڤە کلیلا کارکرنا دوگمەیێ یە
+// tailwind.config.js
+module.exports = {
+  darkMode: 'class', // ئەڤە گرنگە
   content: [
     "./index.html",
     "./src/**/*.{js,ts,jsx,tsx}",

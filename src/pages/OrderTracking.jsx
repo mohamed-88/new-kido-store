@@ -1,6 +1,6 @@
 import React, { useState, useContext } from 'react';
 import { Search, Truck, Package, CheckCircle2, MapPin, Clock, AlertCircle } from 'lucide-react';
-import { ShopContext } from '../ShopContext';
+import { ShopContext } from '../context/ShopContext';
 
 const OrderTracking = () => {
   const { orders } = useContext(ShopContext); // وەرگرتنا ئۆردەران ژ کۆنتێکستی

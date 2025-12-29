@@ -1,124 +1,214 @@
-import React, { useState, useContext, useEffect } from 'react';
-import { ShopContext } from '../ShopContext';
-import { ShoppingBag, Eye, X, Timer, Zap, CheckCircle2, AlertCircle } from 'lucide-react';
+import React, { useState, useContext, useEffect, useMemo } from 'react';
+import { ShopContext } from '../context/ShopContext';
+import { 
+  ShoppingBag, X, Timer, CheckCircle2, 
+  ShoppingCart, ChevronRight, ChevronLeft, Star, Tag, Search
+} from 'lucide-react';
 
 const CountdownTimer = ({ expiryDate, onExpire }) => {
-  const [timeLeft, setTimeLeft] = useState(calculateTimeLeft());
-  function calculateTimeLeft() {
+  const calculateTimeLeft = () => {
     const difference = new Date(expiryDate) - new Date();
     if (difference <= 0) return null;
     return {
-      سەعات: Math.floor((difference / (1000 * 60 * 60)) % 24),
-      خۆلەک: Math.floor((difference / 1000 / 60) % 60),
-      چرکە: Math.floor((difference / 1000) % 60),
+      H: Math.floor((difference / (1000 * 60 * 60)) % 24),
+      M: Math.floor((difference / 1000 / 60) % 60),
+      S: Math.floor((difference / 1000) % 60),
     };
-  }
+  };
+
+  const [timeLeft, setTimeLeft] = useState(calculateTimeLeft());
+
   useEffect(() => {
     const timer = setInterval(() => {
       const remaining = calculateTimeLeft();
-      if (!remaining) { clearInterval(timer); onExpire(); }
+      if (!remaining) {
+        clearInterval(timer);
+        if (onExpire) onExpire();
+      }
       setTimeLeft(remaining);
     }, 1000);
     return () => clearInterval(timer);
-  }, [expiryDate]);
+  }, [expiryDate, onExpire]);
+
   if (!timeLeft) return null;
+
   return (
-    <div className="flex items-center gap-1 bg-amber-500 text-white px-2 py-1 rounded-lg font-mono text-[10px] font-bold animate-pulse">
+    <div className="flex items-center gap-1 bg-red-500/90 backdrop-blur-md text-white px-2 py-1.5 rounded-xl font-mono text-[10px] font-black shadow-lg animate-pulse">
       <Timer size={12} />
-      <span>{timeLeft.سەعات}:{timeLeft.خۆلەک}:{timeLeft.چرکە}</span>
+      <span>{timeLeft.H.toString().padStart(2, '0')}:{timeLeft.M.toString().padStart(2, '0')}:{timeLeft.S.toString().padStart(2, '0')}</span>
     </div>
   );
 };
 
 const Home = () => {
-  const { products, addToCart, updateProduct } = useContext(ShopContext);
+  // وەرگرتنا searchQuery ژ کۆنتێکستی چونکە د ناڤ Navbar دایە
+  const { products, addToCart, updateProduct, searchQuery } = useContext(ShopContext);
+  
   const [selectedProduct, setSelectedProduct] = useState(null);
   const [selectedSize, setSelectedSize] = useState("");
   const [selectedColor, setSelectedColor] = useState("");
+  const [activeImgIndex, setActiveImgIndex] = useState(0);
   const [error, setError] = useState("");
+  const [isVisible, setIsVisible] = useState(false);
+
+  useEffect(() => {
+    setIsVisible(true);
+  }, []);
 
   const getDiscountedPrice = (price, discount) => {
     const p = Number(price) || 0;
     const d = Number(discount) || 0;
+    if (d <= 0) return p;
     return p - (p * (d / 100));
   };
 
-  const handleAddToCart = () => {
-    if (!selectedSize) {
-      setError("هیڤیە بەری زێدەکرنێ، سایزێ خۆ دەستنیشان بکە!");
-      return;
+  // فلتەرکرنا بەرهەمان ل دویڤ سێرچا د ناڤ Navbar دا
+  const filteredProducts = useMemo(() => {
+    if (!products) return [];
+    let items = [...products].reverse();
+    
+    if (searchQuery && searchQuery.trim() !== "") {
+      items = items.filter(p => 
+        p.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
+        (p.description && p.description.toLowerCase().includes(searchQuery.toLowerCase()))
+      );
     }
-    
-    addToCart({ 
-      ...selectedProduct, 
-      size: selectedSize, 
-      color: selectedColor || "Standard", 
-      price: getDiscountedPrice(selectedProduct.price, selectedProduct.discount) 
-    });
-    
-    // پاقژکرنا داتایان پشتی زێدەکرنێ
-    setSelectedProduct(null);
+    return items;
+  }, [products, searchQuery]);
+
+  const allGalleryImages = useMemo(() => {
+    if (!selectedProduct) return [];
+    let imgs = [];
+    if (selectedColor && selectedProduct.colorImages?.[selectedColor]) {
+      imgs = [...(Array.isArray(selectedProduct.colorImages[selectedColor]) ? selectedProduct.colorImages[selectedColor] : [selectedProduct.colorImages[selectedColor]])];
+    }
+    const generalImages = selectedProduct.images || [];
+    const finalGallery = [...imgs, ...generalImages];
+    return finalGallery.length > 0 ? finalGallery : [selectedProduct.image];
+  }, [selectedProduct, selectedColor]);
+
+  useEffect(() => {
+    if (selectedProduct) document.body.style.overflow = 'hidden';
+    else document.body.style.overflow = 'unset';
+    return () => { document.body.style.overflow = 'unset'; };
+  }, [selectedProduct]);
+
+  const handleOpenModal = (product) => {
+    setSelectedProduct(product);
     setSelectedSize("");
     setSelectedColor("");
+    setActiveImgIndex(0);
     setError("");
   };
 
+  const handleAddToCart = () => {
+    if (selectedProduct.sizes?.length > 0 && !selectedSize) {
+      setError("تکایە سایز هەڵبژێرە");
+      return;
+    }
+    
+    const isExpired = selectedProduct.expiryDate && new Date(selectedProduct.expiryDate) < new Date();
+    const currentDiscount = isExpired ? 0 : selectedProduct.discount;
+
+    const cartItem = {
+      id: `${selectedProduct.id}-${selectedColor}-${selectedSize}`,
+      productId: selectedProduct.id,
+      name: selectedProduct.name,
+      price: getDiscountedPrice(selectedProduct.price, currentDiscount),
+      selectedSize: selectedSize,
+      selectedColor: selectedColor || "Default",
+      image: allGalleryImages[activeImgIndex] || selectedProduct.image,
+      quantity: 1
+    };
+    addToCart(cartItem);
+    setSelectedProduct(null);
+  };
+
   return (
-    <div className="py-6" dir="rtl">
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 md:gap-6 text-right">
-        {products.map((product) => {
-          const price = Number(product.price);
-          const discount = Number(product.discount || 0);
-          const hasDiscount = discount > 0;
-          const finalPrice = getDiscountedPrice(price, discount);
+    <div className="pb-24 px-4 md:px-8 max-w-[1500px] mx-auto font-sans text-right" dir="rtl">
+      
+      {/* Hero Header - بێ سێرچ بار چونکە چوو بۆ ناڤبارێ */}
+      <div className={`py-12 text-center transition-all duration-1000 transform ${isVisible ? 'opacity-100 translate-y-0' : 'opacity-0 -translate-y-10'}`}>
+        <h1 className="text-4xl md:text-5xl font-black dark:text-white mb-4 tracking-tighter italic">KIDDO <span className="text-indigo-600">COLLECTION</span></h1>
+        <div className="w-24 h-1.5 bg-indigo-600 mx-auto rounded-full shadow-lg shadow-indigo-500/50"></div>
+      </div>
+
+      {/* Product Grid */}
+      <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-8 md:gap-10">
+        {filteredProducts.map((product, index) => {
+          const isExpired = product.expiryDate && new Date(product.expiryDate) < new Date();
+          const currentDiscount = isExpired ? 0 : product.discount;
+          const hasDiscount = currentDiscount > 0;
+          const finalPrice = getDiscountedPrice(product.price, currentDiscount);
 
           return (
-            <div key={product.id} className="bg-white dark:bg-slate-900 rounded-[2rem] md:rounded-[2.5rem] overflow-hidden border dark:border-slate-800 group transition-all hover:shadow-2xl flex flex-col relative">
-              
-              {hasDiscount && product.expiryDate && (
-                <div className="absolute top-3 left-3 right-3 z-10 flex justify-between items-center pointer-events-none">
-                  <CountdownTimer expiryDate={product.expiryDate} onExpire={() => updateProduct(product.id, { discount: 0, expiryDate: null })} />
-                  <div className="bg-red-600 text-white px-2 py-1 rounded-lg text-[10px] font-black flex items-center gap-1">
-                    <Zap size={10} fill="currentColor" /> %{discount}-
-                  </div>
+            <div 
+              key={product.id} 
+              onClick={() => handleOpenModal(product)} 
+              style={{ transitionDelay: `${index * 50}ms` }}
+              className={`group bg-white dark:bg-slate-900 rounded-[2.5rem] overflow-hidden border border-gray-100 dark:border-slate-800 transition-all duration-700 hover:shadow-2xl hover:-translate-y-2 cursor-pointer relative ${isVisible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-10'}`}
+            >
+              {/* Image Container - 1:1 Aspect Ratio */}
+              <div className="relative aspect-square overflow-hidden bg-gray-50 dark:bg-slate-800">
+                <div className="absolute top-4 right-4 z-10 flex flex-col gap-2">
+                  {hasDiscount && (
+                    <div className="bg-red-500 text-white text-[10px] font-black px-3 py-1.5 rounded-2xl flex items-center gap-1 shadow-xl animate-bounce">
+                      <Tag size={12} /> %{currentDiscount} داشکاندن
+                    </div>
+                  )}
+                  {hasDiscount && product.expiryDate && (
+                    <CountdownTimer 
+                      expiryDate={product.expiryDate} 
+                      onExpire={() => updateProduct(product.id, { discount: 0 })} 
+                    />
+                  )}
                 </div>
-              )}
-
-              <div className="relative aspect-[3/4] overflow-hidden bg-gray-100 dark:bg-slate-800 cursor-pointer" onClick={() => setSelectedProduct(product)}>
-                <img src={product.image} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700" alt={product.name} />
-                <div className="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                   <div className="bg-white/90 p-3 rounded-full text-slate-900 shadow-xl"><Eye size={24} /></div>
+                
+                <img src={product.image} className="w-full h-full object-cover transition-transform duration-1000 group-hover:scale-110" alt={product.name} />
+                
+                <div className="absolute bottom-4 left-4">
+                  <div className="bg-white/90 dark:bg-slate-900/90 backdrop-blur-md p-2.5 rounded-2xl text-yellow-500 shadow-sm">
+                    <Star size={16} fill="currentColor" />
+                  </div>
                 </div>
               </div>
 
-              <div className="p-4 md:p-5 flex flex-col flex-1">
-                <p className="text-[10px] text-indigo-600 font-black uppercase mb-1">{product.category || 'گشتی'}</p>
-                <h3 className="font-black text-sm md:text-base dark:text-white mb-2 line-clamp-1">{product.name}</h3>
-                
-                {/* نیشاندانا سایزێن بەردەست ل بن ناڤی */}
-                <div className="flex flex-wrap gap-1 mb-3">
-                  {["S", "M", "L", "XL"].map(s => (
-                    <span key={s} className="text-[9px] border dark:border-slate-700 dark:text-gray-400 px-1.5 py-0.5 rounded-md font-bold uppercase tracking-tighter">
-                      {s}
-                    </span>
-                  ))}
+              {/* Product Info */}
+              <div className="p-6 space-y-4">
+                <div>
+                  <h3 className="font-black text-lg dark:text-white line-clamp-1 group-hover:text-indigo-600 transition-colors">{product.name}</h3>
+                  <p className="text-[11px] text-gray-400 font-bold line-clamp-2 leading-relaxed h-8 mt-1">
+                    {product.description || "هیچ وەسفەک نەیێ زێدەکرینە بۆ ڤی بەرهەمی"}
+                  </p>
                 </div>
-                
-                <div className="mt-auto">
-                  <div className="flex flex-col mb-4">
-                    {hasDiscount ? (
-                      <>
-                        <span className="text-[11px] text-gray-400 line-through decoration-red-500 decoration-2 italic font-bold">{price.toLocaleString()} IQD</span>
-                        <span className="font-black text-indigo-600 text-lg">{finalPrice.toLocaleString()} <span className="text-[10px]">IQD</span></span>
-                      </>
-                    ) : (
-                      <span className="font-black dark:text-white text-lg">{price.toLocaleString()} <span className="text-[10px]">IQD</span></span>
-                    )}
+
+                <div className="flex items-center gap-2">
+                  <div className="flex -space-x-1.5 overflow-hidden">
+                    {product.colors?.slice(0, 3).map((c, i) => (
+                      <div key={i} className="w-4 h-4 rounded-full border-2 border-white dark:border-slate-900 shadow-sm" style={{ backgroundColor: c.toLowerCase() }}></div>
+                    ))}
                   </div>
-                  
-                  <button onClick={() => setSelectedProduct(product)} className="w-full bg-slate-900 dark:bg-indigo-600 text-white py-3 rounded-2xl flex items-center justify-center gap-2 hover:bg-indigo-700 transition-all font-bold text-xs">
-                    <ShoppingBag size={16} /> کڕین و دیارکرنا سایزی
-                  </button>
+                  {product.sizes?.length > 0 && (
+                    <span className="text-[9px] font-black text-gray-400 bg-gray-100 dark:bg-slate-800 px-2 py-0.5 rounded-md">
+                      +{product.sizes.length} سایز
+                    </span>
+                  )}
+                </div>
+
+                <div className="pt-4 border-t dark:border-slate-800 flex justify-between items-center">
+                  <div className="flex flex-col text-right">
+                    {hasDiscount && (
+                      <span className="text-xs text-gray-400 line-through font-bold decoration-red-400">
+                        {Number(product.price).toLocaleString()}
+                      </span>
+                    )}
+                    <span className="text-xl font-black text-indigo-600 dark:text-indigo-400">
+                      {finalPrice.toLocaleString()} <span className="text-[10px] opacity-60 uppercase">Iqd</span>
+                    </span>
+                  </div>
+                  <div className="bg-indigo-600 text-white p-3.5 rounded-2xl shadow-lg transition-all group-hover:rotate-[360deg] duration-700">
+                    <ShoppingCart size={20} />
+                  </div>
                 </div>
               </div>
             </div>
@@ -126,58 +216,89 @@ const Home = () => {
         })}
       </div>
 
-      {/* --- QUICK VIEW MODAL --- */}
+      {/* Empty Search Result */}
+      {filteredProducts.length === 0 && (
+        <div className="text-center py-32 animate-in fade-in duration-500">
+          <div className="bg-gray-100 dark:bg-slate-900 w-24 h-24 rounded-full flex items-center justify-center mx-auto mb-6">
+            <Search size={40} className="text-gray-300" />
+          </div>
+          <h3 className="font-black dark:text-white text-2xl mb-2">چ بەرهەم نەهاتنە دیتن!</h3>
+          <p className="text-gray-400 font-bold uppercase tracking-widest text-xs">ب ناڤەکێ دی تاقی بکە</p>
+        </div>
+      )}
+
+      {/* MODAL */}
       {selectedProduct && (
-        <div className="fixed inset-0 z-[300] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-in fade-in duration-300">
-          <div className="bg-white dark:bg-slate-900 w-full max-w-4xl max-h-[90vh] rounded-[3rem] overflow-hidden shadow-2xl flex flex-col md:flex-row relative">
-            <button onClick={() => {setSelectedProduct(null); setSelectedSize(""); setError("");}} className="absolute top-4 left-4 z-50 p-2 bg-gray-100 dark:bg-slate-800 dark:text-white rounded-full hover:rotate-90 transition-transform">
+        <div className="fixed inset-0 z-[500] flex items-end md:items-center justify-center bg-black/80 backdrop-blur-sm p-0 md:p-4">
+          <div className="bg-white dark:bg-slate-900 w-full max-w-5xl max-h-[95vh] rounded-t-[3rem] md:rounded-[4rem] overflow-hidden flex flex-col md:flex-row relative shadow-2xl animate-in zoom-in duration-300">
+            
+            <button onClick={() => setSelectedProduct(null)} className="absolute top-6 left-6 z-[600] p-3 bg-white dark:bg-slate-800 shadow-2xl rounded-full dark:text-white hover:rotate-90 transition-all">
               <X size={24} />
             </button>
 
-            <div className="md:w-1/2 bg-gray-50 dark:bg-slate-800 h-64 md:h-auto">
-              <img src={selectedProduct.image} className="w-full h-full object-cover" alt={selectedProduct.name} />
+            {/* SLIDER */}
+            <div className="md:w-1/2 relative h-[40vh] md:h-auto bg-gray-100 dark:bg-slate-800">
+              <img src={allGalleryImages[activeImgIndex]} className="w-full h-full object-cover" />
+              {allGalleryImages.length > 1 && (
+                <div className="absolute inset-x-6 top-1/2 -translate-y-1/2 flex justify-between">
+                  <button onClick={(e) => {e.stopPropagation(); setActiveImgIndex(prev => prev === 0 ? allGalleryImages.length - 1 : prev - 1)}} className="p-4 bg-white/60 backdrop-blur-md rounded-full text-indigo-900 hover:bg-white transition-all shadow-lg"><ChevronRight size={24} /></button>
+                  <button onClick={(e) => {e.stopPropagation(); setActiveImgIndex(prev => (prev + 1) % allGalleryImages.length)}} className="p-4 bg-white/60 backdrop-blur-md rounded-full text-indigo-900 hover:bg-white transition-all shadow-lg"><ChevronLeft size={24} /></button>
+                </div>
+              )}
             </div>
 
-            <div className="md:w-1/2 p-8 md:p-12 overflow-y-auto text-right">
-              <h2 className="text-2xl font-black dark:text-white mb-4">{selectedProduct.name}</h2>
-              
-              <div className="flex items-center gap-4 mb-6 bg-indigo-50 dark:bg-indigo-500/5 p-4 rounded-3xl w-fit">
-                <div className="text-2xl font-black text-indigo-600">
-                  {getDiscountedPrice(selectedProduct.price, selectedProduct.discount).toLocaleString()} <span className="text-sm">IQD</span>
+            {/* DETAILS */}
+            <div className="md:w-1/2 p-8 md:p-14 overflow-y-auto">
+              <div className="mb-8 text-right">
+                <h2 className="text-3xl font-black dark:text-white mb-4 leading-tight">{selectedProduct.name}</h2>
+                <div className="flex items-center gap-4 justify-end">
+                   <span className="text-4xl font-black text-indigo-600">
+                    {getDiscountedPrice(selectedProduct.price, (selectedProduct.expiryDate && new Date(selectedProduct.expiryDate) < new Date() ? 0 : selectedProduct.discount)).toLocaleString()} <span className="text-sm">IQD</span>
+                  </span>
+                  {(selectedProduct.discount > 0 && !(selectedProduct.expiryDate && new Date(selectedProduct.expiryDate) < new Date())) && (
+                    <span className="text-lg text-gray-400 line-through font-bold opacity-50">
+                      {Number(selectedProduct.price).toLocaleString()}
+                    </span>
+                  )}
                 </div>
               </div>
 
-              <div className="space-y-6">
-                <div>
-                  <h4 className={`font-black mb-3 text-sm ${error ? 'text-red-500 animate-bounce' : 'dark:text-white'}`}>
-                    {error ? error : "سایزێ خۆ هەڵبژێرە (مەجبوری):"}
-                  </h4>
-                  <div className="flex flex-wrap gap-2">
-                    {["S", "M", "L", "XL", "XXL"].map(size => (
-                      <button key={size} onClick={() => {setSelectedSize(size); setError("");}} className={`px-5 py-2.5 rounded-xl border-2 font-black transition-all ${selectedSize === size ? 'border-indigo-600 bg-indigo-600 text-white' : 'border-gray-100 dark:border-slate-800 dark:text-white hover:border-indigo-300'}`}>
-                        {size}
-                      </button>
-                    ))}
+              <div className="space-y-10 text-right">
+                {selectedProduct.colors?.length > 0 && (
+                  <div>
+                    <p className="text-[11px] font-black text-gray-400 mb-4 uppercase tracking-[0.2em]">ڕەنگێ بەردەست</p>
+                    <div className="flex flex-wrap gap-4 justify-end">
+                      {selectedProduct.colors.map(color => {
+                        const codes = { Red:'#ef4444', Blue:'#3b82f6', Black:'#000000', White:'#ffffff', Pink:'#ec4899', Gray:'#6b7280', Navy:'#1e3a8a', Green:'#22c55e' };
+                        return (
+                          <button key={color} onClick={() => { setSelectedColor(color); setActiveImgIndex(0); }} className={`w-14 h-14 rounded-[1.5rem] border-4 transition-all flex items-center justify-center ${selectedColor === color ? 'border-indigo-600 scale-110 shadow-xl' : 'border-transparent shadow-sm'}`} style={{ backgroundColor: codes[color] || color.toLowerCase() }}>
+                            {selectedColor === color && <CheckCircle2 size={24} className={color === 'White' ? 'text-black' : 'text-white'} />}
+                          </button>
+                        );
+                      })}
+                    </div>
                   </div>
-                </div>
+                )}
 
-                <div>
-                  <h4 className="dark:text-white font-black mb-3 text-sm">ڕەنگ:</h4>
-                  <div className="flex gap-3">
-                    {["Black", "White", "Blue", "Beige"].map(color => (
-                      <button key={color} onClick={() => setSelectedColor(color)} className={`w-10 h-10 rounded-full border-4 transition-all flex items-center justify-center ${selectedColor === color ? 'border-indigo-600 scale-110 shadow-lg' : 'border-white dark:border-slate-800 shadow-sm'}`} style={{ backgroundColor: color.toLowerCase() }}>
-                        {selectedColor === color && <CheckCircle2 size={16} className={color === 'White' ? 'text-black' : 'text-white'} />}
-                      </button>
-                    ))}
+                {selectedProduct.sizes?.length > 0 && (
+                  <div>
+                    <div className="flex justify-between items-center mb-4">
+                      {error && <span className="text-xs text-red-500 font-black animate-bounce">{error}</span>}
+                      <p className="text-[11px] font-black text-gray-400 uppercase tracking-[0.2em]">سایزێ هەلبژێرە</p>
+                    </div>
+                    <div className="grid grid-cols-4 gap-4">
+                      {selectedProduct.sizes.map(size => (
+                        <button key={size} onClick={() => {setSelectedSize(size); setError("");}} className={`py-4 rounded-[1.5rem] border-2 font-black text-sm transition-all ${selectedSize === size ? 'border-indigo-600 bg-indigo-600 text-white shadow-xl shadow-indigo-500/30' : 'border-gray-100 dark:border-slate-800 dark:text-white hover:border-indigo-200'}`}>
+                          {size}
+                        </button>
+                      ))}
+                    </div>
                   </div>
-                </div>
+                )}
               </div>
 
-              <button 
-                onClick={handleAddToCart}
-                className="w-full mt-10 bg-indigo-600 text-white py-5 rounded-[2rem] font-black text-lg hover:bg-indigo-700 transition-all flex items-center justify-center gap-3 active:scale-95 shadow-xl shadow-indigo-500/20"
-              >
-                <ShoppingBag size={24} /> زێدەکرن بۆ سەبەتێ
+              <button onClick={handleAddToCart} className="w-full mt-12 bg-indigo-600 text-white py-6 rounded-[2.5rem] font-black text-lg flex items-center justify-center gap-4 shadow-2xl shadow-indigo-500/40 hover:bg-indigo-700 active:scale-95 transition-all">
+                <ShoppingBag size={24} /> زێدەکرن بۆ سەلێ
               </button>
             </div>
           </div>
