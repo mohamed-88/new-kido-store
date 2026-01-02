@@ -18,12 +18,11 @@ const Navbar = ({ setIsCartOpen }) => {
   const cartCount = cartItems?.reduce((acc, item) => acc + item.quantity, 0) || 0;
   const unreadCount = notifications?.filter(n => !n.isRead).length || 0;
 
-  // فۆنکشنا دەرکەتنێ (Log Out)
   const handleLogout = () => {
     localStorage.removeItem('isAdmin');
     setIsSettingOpen(false);
     navigate('/');
-    window.location.reload(); // بۆ نووژەنکرنەوا حالەتێ ئەدمینی
+    window.location.reload();
   };
 
   return (
@@ -40,19 +39,39 @@ const Navbar = ({ setIsCartOpen }) => {
 
         {/* Actions */}
         <div className="flex items-center gap-2 justify-end flex-1">
+          
           {/* Search */}
           <div className={`relative flex items-center transition-all ${isSearchOpen ? 'bg-gray-100 dark:bg-slate-800 px-3 py-1.5 rounded-xl flex-1 max-w-[200px]' : ''}`}>
             {isSearchOpen && (
               <input 
-                type="text" placeholder="بگەڕێ..." value={searchQuery}
+                type="text" 
+                placeholder="بگەڕێ..." 
+                value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="bg-transparent outline-none text-sm dark:text-white text-right pr-2 w-full" dir="rtl"
+                className="bg-transparent outline-none text-[16px] dark:text-white text-right pr-2 w-full origin-right transform scale-[0.87] focus:ring-0" 
+                dir="rtl"
+                autoFocus
               />
             )}
-            <button onClick={() => setIsSearchOpen(!isSearchOpen)} className="p-2 text-gray-600 dark:text-gray-300">
+            <button 
+              onClick={() => {
+                setIsSearchOpen(!isSearchOpen);
+                if(isSearchOpen) setSearchQuery("");
+              }} 
+              className="p-2 text-gray-600 dark:text-gray-300 active:scale-90 transition-transform"
+            >
               {isSearchOpen ? <X size={20} /> : <Search size={22} />}
             </button>
           </div>
+
+          {/* --- ئایکۆنێ چاودێریکردنا ئۆردەری (Track Order) --- */}
+          <Link 
+            to="/track-order" 
+            className="p-2 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-slate-800 rounded-xl transition-all active:scale-90"
+            title="چاودێریکردنا بارستەی"
+          >
+            <Truck size={22} />
+          </Link>
 
           {/* Notifications */}
           <div className="relative">
@@ -66,22 +85,22 @@ const Navbar = ({ setIsCartOpen }) => {
                   <span>ئاگەدارییەکان</span>
                   <button onClick={() => markAllAsRead()} className="text-indigo-600">هەمی خواندن</button>
                 </div>
-                <div className="max-h-60 overflow-y-auto p-4 text-center dark:text-gray-300">
-                  {notifications.length > 0 ? notifications.map(n => <div key={n.id} className="text-right text-xs py-2 border-b dark:border-slate-800">{n.message}</div>) : "چ نینە"}
+                <div className="max-h-60 overflow-y-auto p-4 text-center dark:text-gray-300 text-xs">
+                  {notifications.length > 0 ? notifications.map(n => <div key={n.id} className="text-right py-2 border-b dark:border-slate-800">{n.message}</div>) : "چ نینە"}
                 </div>
               </div>
             )}
           </div>
 
           {/* Cart */}
-          <button onClick={() => setIsCartOpen(true)} className="relative p-2 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-slate-800 rounded-xl">
+          <button onClick={() => setIsCartOpen(true)} className="relative p-2 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-slate-800 rounded-xl active:scale-90 transition-transform">
             <ShoppingBag size={22} />
             {cartCount > 0 && <span className="absolute -top-1 -right-1 w-5 h-5 bg-indigo-600 text-white text-[10px] rounded-full flex items-center justify-center font-black border-2 border-white dark:border-slate-900">{cartCount}</span>}
           </button>
 
           {/* Settings Menu */}
           <div className="relative">
-            <button onClick={() => { setIsSettingOpen(!isSettingOpen); setIsNotifOpen(false); }} className={`p-2 rounded-xl transition ${isSettingOpen ? 'bg-indigo-600 text-white' : 'bg-gray-100 dark:bg-slate-800 text-gray-600 dark:text-gray-300'}`}>
+            <button onClick={() => { setIsSettingOpen(!isSettingOpen); setIsNotifOpen(false); }} className={`p-2 rounded-xl transition ${isSettingOpen ? 'bg-indigo-600 text-white shadow-lg' : 'bg-gray-100 dark:bg-slate-800 text-gray-600 dark:text-gray-300'}`}>
               <Settings size={22} />
             </button>
             {isSettingOpen && (

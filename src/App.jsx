@@ -44,7 +44,9 @@ function App() {
             path="/admin" 
             element={isAuthenticated ? <Admin /> : <Navigate to="/login" replace />} 
           />
+          <Route path="/track-order" element={<OrderTracking />} />
         </Routes>
+        
       </main>
 
       <CartDrawer isOpen={isCartOpen} onClose={() => setIsCartOpen(false)} />

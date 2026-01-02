@@ -4,20 +4,34 @@ import { ref, onValue, push, remove, update } from "firebase/database";
 
 export const ShopContext = createContext();
 
+// --- ١. لیستا کۆدێن داشکاندنێ (دشێی ل ڤێرە زێدە بکەی) ---
+const PROMO_CODES = {
+  "HELLO10": 10,    // %10 داشکاندن
+  "KURDISTAN": 20,  // %20 داشکاندن
+  "OFF5": 5         // %5 داشکاندن
+};
+
 export const ShopProvider = ({ children }) => {
   const [products, setProducts] = useState([]);
   const [orders, setOrders] = useState([]);
   const [notifications, setNotifications] = useState([]);
   const [searchQuery, setSearchQuery] = useState("");
 
+  // --- ٢. ستەیتێن Promo Code ---
+  const [appliedDiscount, setAppliedDiscount] = useState(0); 
+  const [promoError, setPromoError] = useState("");
+  const [activePromoCode, setActivePromoCode] = useState("");
+
+  // --- ٣. خواندنا سەبەتێ ژ LocalStorage ---
   const [cartItems, setCartItems] = useState(() => {
-    const savedCart = localStorage.getItem("cartItems");
-    return savedCart ? JSON.parse(savedCart) : [];
+    try {
+      const savedCart = localStorage.getItem("cartItems");
+      return savedCart ? JSON.parse(savedCart) : [];
+    } catch (error) { return []; }
   });
 
-  // --- 1. خویندنا داتایان ب شێوێ Real-time ---
+  // --- ٤. خویندنا داتایان ب شێوێ Real-time ژ Firebase ---
   useEffect(() => {
-    // خویندنا بەرهەمان
     onValue(ref(db, 'products'), (snapshot) => {
       const data = snapshot.val();
       if (data) {
@@ -26,7 +40,6 @@ export const ShopProvider = ({ children }) => {
       } else { setProducts([]); }
     });
 
-    // خویندنا ئۆردەران
     onValue(ref(db, 'orders'), (snapshot) => {
       const data = snapshot.val();
       if (data) {
@@ -35,12 +48,10 @@ export const ShopProvider = ({ children }) => {
       } else { setOrders([]); }
     });
 
-    // خویندنا ئاگەهدارییان
     onValue(ref(db, 'notifications'), (snapshot) => {
       const data = snapshot.val();
       if (data) {
         const notifList = Object.keys(data).map(key => ({ id: key, ...data[key] }));
-        // ڕێزبەندکرن ژ نویترین بۆ کۆنترین
         setNotifications(notifList.reverse());
       } else { setNotifications([]); }
     });
@@ -50,132 +61,128 @@ export const ShopProvider = ({ children }) => {
     localStorage.setItem("cartItems", JSON.stringify(cartItems));
   }, [cartItems]);
 
-  // --- 2. کارێن ئەدمینی (Admin Functions) ---
-  const addProduct = async (productData) => {
-    try {
-      await push(ref(db, 'products'), productData);
+  // --- ٥. لۆجیکێ Promo Code ---
+  const applyPromoCode = (code) => {
+    if (!code || !code.trim()) {
+      setPromoError("تکایە کۆدەکێ بنڤێسە");
+      return false;
+    }
+    const upperCode = code.toUpperCase().trim();
+    if (PROMO_CODES[upperCode]) {
+      setAppliedDiscount(PROMO_CODES[upperCode]);
+      setActivePromoCode(upperCode);
+      setPromoError("");
       return true;
-    } catch (error) { console.error(error); return false; }
-  };
-
-  const updateProduct = async (productId, updatedData) => {
-    try {
-      await update(ref(db, `products/${productId}`), {
-        ...updatedData,
-        discount: Number(updatedData.discount) || 0,
-        price: Number(updatedData.price)
-      });
-      return true;
-    } catch (error) { return false; }
-  };
-
-  const deleteProduct = async (productId) => {
-    try {
-      await remove(ref(db, `products/${productId}`));
-      return true;
-    } catch (error) { return false; }
-  };
-
-  const updateOrderStatus = async (orderId, newStatus) => {
-    try {
-      await update(ref(db, `orders/${orderId}`), { status: newStatus });
-      return true;
-    } catch (error) { return false; }
-  };
-
-  // --- 3. لۆجیکێ ئاگەهدارییان (Notification Logic) ---
-  
-  // نیشانکرنا هەمییان وەک خواندی د ناڤ Firebase دا
-  const markAllAsRead = async () => {
-    try {
-      const updates = {};
-      notifications.forEach(notif => {
-        if (!notif.isRead) {
-          updates[`/notifications/${notif.id}/isRead`] = true;
-        }
-      });
-      await update(ref(db), updates);
-    } catch (error) {
-      console.error("Error marking notifications as read:", error);
+    } else {
+      setPromoError("ئەڤ کۆدە یێ دروست نینە!");
+      setAppliedDiscount(0);
+      setActivePromoCode("");
+      return false;
     }
   };
 
-  // زێدەکرنا ئاگەهدارییەکا نوی (بۆ نموونە دەمێ ئۆردەرەک دهێت)
-  const createNotification = async (message) => {
-    try {
-      const notifRef = ref(db, 'notifications');
-      await push(notifRef, {
-        message,
-        isRead: false,
-        createdAt: new Date().toISOString()
-      });
-    } catch (error) { console.error(error); }
+  const removePromoCode = () => {
+    setAppliedDiscount(0);
+    setActivePromoCode("");
+    setPromoError("");
   };
 
-  // --- 4. لۆجیکێ سەبەتێ (Cart Logic) ---
+  // --- ٦. لۆجیکێ هەژمارکرنا کۆمێ (getCartAmount) ---
+  const getCartAmount = () => {
+    return cartItems.reduce((total, item) => {
+      // تەنێ نرخێ ئەسلی وەردگریت (Price) و جاران بڕی دکەت (Quantity)
+      // سیستەم ئیتر سەیری داشکاندنا سەر بەرهەمی (Item Discount) ناکەت
+      const price = Number(item.price) || 0;
+      return total + (price * item.quantity);
+    }, 0);
+  };
+
+  // --- ٧. لۆجیکێ سەبەتێ (Add, Remove, Delete) ---
   const addToCart = (product) => {
     setCartItems((prev) => {
-      const isExist = prev.find(item => 
-        item.productId === product.productId && 
-        item.selectedSize === product.selectedSize && 
-        item.selectedColor === product.selectedColor
-      );
-
+      const cartId = `${product.id || product.productId}-${product.selectedSize || 'none'}-${product.selectedColor || 'none'}`;
+      const isExist = prev.find(item => item.cartId === cartId);
       if (isExist) {
-        return prev.map(item => 
-          (item.productId === product.productId && 
-           item.selectedSize === product.selectedSize && 
-           item.selectedColor === product.selectedColor) 
-          ? { ...item, quantity: item.quantity + 1 } : item
-        );
+        return prev.map(item => item.cartId === cartId ? { ...item, quantity: item.quantity + 1 } : item);
       }
-      return [...prev, { ...product, id: Date.now().toString(), quantity: 1 }];
+      return [...prev, { ...product, cartId, quantity: 1 }];
     });
   };
 
-  const removeFromCart = (uniqueId) => {
+  const removeFromCart = (cartId) => {
     setCartItems(prev => prev.map(item => 
-      (item.id === uniqueId) ? { ...item, quantity: item.quantity - 1 } : item
+      (item.cartId === cartId) ? { ...item, quantity: item.quantity - 1 } : item
     ).filter(item => item.quantity > 0));
   };
 
-  const deleteFromCart = (uniqueId) => {
-    setCartItems(prev => prev.filter(item => item.id !== uniqueId));
+  const deleteFromCart = (cartId) => {
+    setCartItems(prev => prev.filter(item => item.cartId !== cartId));
   };
 
-  const clearCart = () => setCartItems([]);
+  const clearCart = () => {
+    setCartItems([]);
+    removePromoCode();
+  };
 
-  // --- 5. زێدەکرنا ئۆردەری ---
+  // --- ٨. فەنکشنێن ئۆردەر و ئەدمینی ---
   const addOrder = async (orderData) => {
     try {
-      const ordersRef = ref(db, 'orders');
       const shortId = `KID-${Math.floor(1000 + Math.random() * 9000)}`;
-      
       const fullOrder = { 
         ...orderData, 
-        orderId: shortId,
+        orderId: shortId, 
         status: 1, 
-        date: new Date().toLocaleDateString('ku-IQ'),
+        date: new Date().toLocaleDateString('ku-IQ'), 
         createdAt: new Date().toISOString() 
       };
-      
-      await push(ordersRef, fullOrder);
-      
-      // دروستکرنا ئاگەهدارییەکێ بۆ ئەدمینی
-      await createNotification(`ئۆردەرەکێ نوی هات: ${shortId} ب کۆژمێ ${orderData.totalPrice} دینار`);
-      
+      await push(ref(db, 'orders'), fullOrder);
+      await createNotification(`ئۆردەرەکێ نوی هات: ${shortId}`);
       return { success: true, orderId: shortId };
-    } catch (error) { 
-      return { success: false }; 
-    }
+    } catch (error) { return { success: false }; }
+  };
+
+  const addProduct = async (data) => {
+    try { await push(ref(db, 'products'), data); return true; } catch (e) { return false; }
+  };
+
+const deleteOrder = (orderId) => {
+  setOrders((prevOrders) => prevOrders.filter(order => order.id !== orderId));
+
+};
+
+  const updateProduct = async (id, data) => {
+    try { await update(ref(db, `products/${id}`), data); return true; } catch (e) { return false; }
+  };
+
+  const deleteProduct = async (id) => {
+    try { await remove(ref(db, `products/${id}`)); return true; } catch (e) { return false; }
+  };
+
+  const updateOrderStatus = async (id, status) => {
+    try { await update(ref(db, `orders/${id}`), { status }); return true; } catch (e) { return false; }
+  };
+
+  const createNotification = async (message) => {
+    try {
+      await push(ref(db, 'notifications'), { message, isRead: false, createdAt: new Date().toISOString() });
+    } catch (e) { console.error(e); }
+  };
+
+  const markAllAsRead = async () => {
+    try {
+      const updates = {};
+      notifications.forEach(notif => { if (!notif.isRead) updates[`/notifications/${notif.id}/isRead`] = true; });
+      await update(ref(db), updates);
+    } catch (e) { console.error(e); }
   };
 
   return (
     <ShopContext.Provider value={{ 
-      products, orders, notifications, cartItems,
-      searchQuery, setSearchQuery,
+      products, orders, notifications, cartItems, searchQuery, setSearchQuery,
+      appliedDiscount, promoError, activePromoCode, applyPromoCode, removePromoCode, getCartAmount,
       addProduct, updateProduct, deleteProduct, updateOrderStatus,
-      addToCart, removeFromCart, deleteFromCart, clearCart, addOrder, markAllAsRead, createNotification
+      addToCart, removeFromCart, deleteFromCart, clearCart, addOrder, 
+      markAllAsRead, createNotification, deleteOrder
     }}>
       {children}
     </ShopContext.Provider>
