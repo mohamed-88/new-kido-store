@@ -1,345 +1,436 @@
-import React, { useState, useRef, useContext } from 'react';
+import React, { useState, useContext, useRef } from 'react';
 import { 
-  Plus, Trash2, Edit2, X, Image as ImageIcon, Calendar,
-  Save, Ruler, Palette, UploadCloud, Images, Package, List, CheckCircle, Clock, ChevronDown, Printer, MapPin, Phone, User, Loader2, Type, FileText
+  Plus, Trash2, Edit2, Printer, MapPin, Phone, User, 
+  ShieldCheck, Package, ListOrdered, ArrowRight, LogOut, X, CreditCard, Calendar,
+  ArrowLeft, Clock, Truck, CheckCircle, XCircle
 } from 'lucide-react';
 import { ShopContext } from '../context/ShopContext';
+import { useNavigate } from 'react-router-dom';
+import AddProduct from './AddProduct';
+import { useReactToPrint } from 'react-to-print';
+
+// ✅ گوهۆڕین بۆ فایەرستۆر
+import { getFirestore, doc, updateDoc, deleteDoc } from "firebase/firestore";
+import { firebaseApp } from '../firebase'; 
+import PrintInvoice from './PrintInvoice';
+
+const db = getFirestore(firebaseApp);
 
 const Admin = () => {
-  const { products, addProduct, deleteProduct, updateProduct, orders, updateOrderStatus, deleteOrder } = useContext(ShopContext);
+  const { products, addProduct, deleteProduct, updateProduct, orders, deleteOrder, logout } = useContext(ShopContext);
+  const navigate = useNavigate();
   
   const [activeTab, setActiveTab] = useState('products'); 
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [editingId, setEditingId] = useState(null);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const galleryInputRef = useRef(null);
-  const colorImagesInputRef = useRef(null);
-  const [activeColorForImages, setActiveColorForImages] = useState(null);
+  const [editingProduct, setEditingProduct] = useState(null);
+  const [selectedOrder, setSelectedOrder] = useState(null);
 
-  const [formData, setFormData] = useState({
-    name: '', category: '', price: '', discount: '0', expiryDate: '', description: '', 
-    sizes: [], colors: [], images: [], colorImages: {} 
+  const componentRef = useRef();
+
+  const handlePrint = useReactToPrint({
+    contentRef: componentRef,
+    documentTitle: `Order-Invoice`,
+    onAfterPrint: () => console.log("Printing Success"),
   });
-
-  const [customSize, setCustomSize] = useState("");
-  const [customColor, setCustomColor] = useState({ name: "", code: "#888888" });
-
-  const clothesSizes = ["0-3M", "3-6M", "6-12M", "1-2Y", "3-4Y", "5-6Y", "S", "M", "L", "XL"];
-  const readyColors = [
-    { name: 'Red', code: '#ef4444' }, { name: 'Blue', code: '#3b82f6' }, 
-    { name: 'Black', code: '#000000' }, { name: 'White', code: '#ffffff' }
-  ];
-
-  const allSizes = Array.from(new Set([...clothesSizes, ...formData.sizes]));
   
-  const allColors = [...readyColors];
-  formData.colors.forEach(cName => {
-    if (!allColors.find(rc => rc.name === cName)) {
-      allColors.push({ name: cName, code: "#888888" });
+  // ✅ فەنکشنا گوهۆڕینا بارێ ئۆردەری (Firestore Version)
+  const handleStatusChange = async (orderId, newStatus) => {
+    try {
+      const orderRef = doc(db, "orders", orderId);
+      await updateDoc(orderRef, { status: newStatus });
+    } catch (error) {
+      console.error("Error updating status:", error);
+      alert("ئاریشەیەک هەبوو د گوهۆڕینا بارێ ئۆردەری دا");
     }
-  });
-
-  const handleEdit = (p) => {
-    setEditingId(p.id);
-    setFormData({
-      name: p.name || "",
-      category: p.category || "",
-      price: p.price || "",
-      discount: p.discount || "0",
-      expiryDate: p.expiryDate || "",
-      description: p.description || "",
-      sizes: p.sizes || [],
-      colors: p.colors || [],
-      images: p.images || [p.image],
-      colorImages: p.colorImages || {}
-    });
-    setIsModalOpen(true);
   };
 
-  const handlePrint = (order) => {
-    const printWindow = window.open('', '_blank');
-    printWindow.document.write(`<html><head><title>Print Order</title><style>body{direction:rtl;font-family:Tahoma;padding:20px;} table{width:100%;border-collapse:collapse;} th,td{border:1px solid #ddd;padding:8px;text-align:right;}</style></head><body><h2>ئۆردەر: ${order.orderId}</h2><p>کڕیار: ${order.customerName}</p><table><thead><tr><th>بەرهەم</th><th>سایز</th><th>ڕەنگ</th><th>دانە</th><th>بها</th></tr></thead><tbody>${order.items.map(i=>`<tr><td>${i.name}</td><td>${i.selectedSize}</td><td>${i.selectedColor}</td><td>${i.quantity}</td><td>${i.price}</td></tr>`).join('')}</tbody></table><h3>کۆم: ${order.totalPrice} IQD</h3></body></html>`);
-    printWindow.document.close();
-    printWindow.print();
+  const statusConfig = {
+    'چاڤەڕێیە': { color: 'bg-amber-50 text-amber-600 border-amber-100', icon: <Clock size={14}/> },
+    'د ڕێدایە': { color: 'bg-blue-50 text-blue-600 border-blue-100', icon: <Truck size={14}/> },
+    'گەهشتییە': { color: 'bg-green-50 text-green-600 border-green-100', icon: <CheckCircle size={14}/> },
+    'هەڵوەشایە': { color: 'bg-red-50 text-red-600 border-red-100', icon: <XCircle size={14}/> },
+  };
+
+  const handleSaveProduct = async (data) => {
+    if (editingProduct) {
+      await updateProduct(editingProduct.id, data);
+    } else {
+      await addProduct(data);
+    }
+    closeModal();
   };
 
   const closeModal = () => {
     setIsModalOpen(false);
-    setEditingId(null);
-    setFormData({ name: '', category: '', price: '', discount: '0', expiryDate: '', description: '', sizes: [], colors: [], images: [], colorImages: {} });
-    setActiveColorForImages(null);
-  };
-
-  const handleColorImageUpload = (e) => {
-    const files = Array.from(e.target.files);
-    if (files.length > 0 && activeColorForImages) {
-      const remainingSlots = 10 - (formData.colorImages[activeColorForImages]?.length || 0);
-      const filesToProcess = files.slice(0, remainingSlots);
-
-      filesToProcess.forEach(file => {
-        const reader = new FileReader();
-        reader.onloadend = () => {
-          setFormData(prev => {
-            const currentImages = prev.colorImages[activeColorForImages] || [];
-            return {
-              ...prev,
-              colorImages: {
-                ...prev.colorImages,
-                [activeColorForImages]: [...currentImages, reader.result].slice(0, 10)
-              }
-            };
-          });
-        };
-        reader.readAsDataURL(file);
-      });
-    }
+    setEditingProduct(null);
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-slate-950 pb-20 text-right overflow-x-hidden" dir="rtl">
-      <div className="bg-white dark:bg-slate-900 border-b dark:border-slate-800 sticky top-0 z-40">
-        <div className="max-w-5xl mx-auto p-4 flex flex-col gap-4">
-          <div className="flex justify-between items-center text-indigo-600 font-black">
-            <h1 className="text-xl">کۆنترۆلا دوکانێ</h1>
-            <button onClick={() => setIsModalOpen(true)} className="bg-indigo-600 text-white p-3 rounded-2xl shadow-lg"><Plus /></button>
+    <div className="min-h-screen bg-gray-50 dark:bg-slate-950 pb-20 text-right font-sans" dir="rtl">
+      
+      {/* Header */}
+      <div className="bg-white dark:bg-slate-900 border-b dark:border-slate-800 sticky top-0 z-40 p-4">
+        <div className="max-w-5xl mx-auto flex flex-col gap-4">
+          <div className="flex justify-between items-center">
+            <h1 className="text-lg font-black text-indigo-600 flex items-center gap-2">کۆنترۆلا دوکانێ <ShieldCheck size={20}/></h1>
+            <div className="flex gap-2">
+                <button onClick={() => {localStorage.removeItem('isAdmin'); if(logout) logout(); navigate('/'); window.location.reload();}} className="px-3 py-2 bg-red-50 text-red-600 rounded-xl text-[10px] font-black flex items-center gap-1">دەرکەفتن<LogOut size={14}/></button>
+                <button onClick={() => navigate('/')} className="px-3 py-2 bg-slate-100 dark:bg-slate-800 rounded-xl text-[10px] font-black flex items-center gap-1 dark:text-white">زڤڕین<ArrowLeft size={14}/></button>
+            </div>
           </div>
-          <div className="flex gap-2 bg-gray-100 dark:bg-slate-800 p-1 rounded-2xl">
-            <button onClick={() => setActiveTab('products')} className={`flex-1 py-3 rounded-xl font-black text-xs transition-all ${activeTab === 'products' ? 'bg-white dark:bg-slate-700 shadow text-indigo-600' : 'text-gray-500'}`}>بەرهەم ({products.length})</button>
-            <button onClick={() => setActiveTab('orders')} className={`flex-1 py-3 rounded-xl font-black text-xs transition-all ${activeTab === 'orders' ? 'bg-white dark:bg-slate-700 shadow text-indigo-600' : 'text-gray-500'}`}>کڕینەکان ({orders.length})</button>
+          <div className="flex gap-2">
+            <button onClick={() => setIsModalOpen(true)} className="bg-indigo-600 text-white p-3.5 rounded-2xl shadow-lg flex-shrink-0 active:scale-90 transition-all"><Plus size={20}/></button>
+            <div className="flex gap-2 bg-gray-100 dark:bg-slate-800 p-1 rounded-2xl flex-1 text-[10px] font-black uppercase tracking-tighter">
+              <button onClick={() => setActiveTab('products')} className={`flex-1 py-3 rounded-xl transition-all ${activeTab === 'products' ? 'bg-white dark:bg-slate-700 shadow text-indigo-600' : 'text-gray-500'}`}>بەرهەم ({products.length})</button>
+              <button onClick={() => setActiveTab('orders')} className={`flex-1 py-3 rounded-xl transition-all ${activeTab === 'orders' ? 'bg-white dark:bg-slate-700 shadow text-indigo-600' : 'text-gray-500'}`}>کڕینەکان ({orders.length})</button>
+            </div>
           </div>
         </div>
       </div>
 
+      {/* Main Content */}
       <div className="max-w-5xl mx-auto p-4">
         {activeTab === 'products' ? (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {products.map(p => (
-              <div key={p.id} className="bg-white dark:bg-slate-900 p-4 rounded-[2rem] border dark:border-slate-800 flex gap-4 items-center">
-                <img src={p.images?.[0] || p.image} className="w-16 h-16 rounded-2xl object-cover" />
+              <div key={p.id} className="bg-white dark:bg-slate-900 p-4 rounded-[2rem] border dark:border-slate-800 flex gap-4 items-center group hover:shadow-xl transition-all">
+                {/* ✅ چاککرنا پیشاندانا وێنەی بۆ حالەتێن رەنگان */}
+                <img 
+                  src={p.image || (p.colorImages && Object.values(p.colorImages)[0]?.[0])} 
+                  className="w-16 h-16 rounded-2xl object-cover border dark:border-slate-700" 
+                  alt="" 
+                />
                 <div className="flex-1">
                   <h3 className="font-black text-sm dark:text-white truncate w-40">{p.name}</h3>
-                  <div className="flex items-center gap-2">
-                    <p className="text-indigo-600 font-bold text-xs">{p.price?.toLocaleString()} IQD</p>
-                    {p.discount > 0 && <span className="text-red-500 text-[10px] font-black">%{p.discount}-</span>}
-                  </div>
+                  <p className="text-indigo-600 font-bold text-xs">{Number(p.price)?.toLocaleString()} IQD</p>
                 </div>
                 <div className="flex gap-1">
-                  <button onClick={() => handleEdit(p)} className="p-2 text-blue-500 hover:bg-blue-50 rounded-xl"><Edit2 size={16}/></button>
-                  <button onClick={() => deleteProduct(p.id)} className="p-2 text-red-500 hover:bg-red-50 rounded-xl"><Trash2 size={16}/></button>
+                  <button onClick={() => {setEditingProduct(p); setIsModalOpen(true);}} className="p-2 text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-xl transition-colors"><Edit2 size={16}/></button>
+                  <button onClick={() => window.confirm('ئەرێ تو پشتڕاستی؟') && deleteProduct(p.id)} className="p-2 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-xl transition-colors"><Trash2 size={16}/></button>
                 </div>
               </div>
             ))}
           </div>
         ) : (
           <div className="space-y-4">
-    {orders && orders.length > 0 ? (
-      orders.slice().reverse().map(order => (
-        <div key={order.id} className="bg-white dark:bg-slate-900 p-6 rounded-[2.5rem] border dark:border-slate-800 shadow-sm">
-          <div className="flex justify-between items-start mb-4">
-            <div>
-              <h3 className="font-black dark:text-white flex items-center gap-2 text-sm"><User size={14}/> {order.customerName}</h3>
-              <p className="text-[11px] text-gray-500 mt-1 flex items-center gap-1"><Phone size={12}/> {order.phone}</p>
-              <p className="text-[11px] text-gray-500 flex items-center gap-1"><MapPin size={12}/> {order.city}, {order.address}</p>
-            </div>
-            <div className="flex gap-2">
-              <button onClick={() => handlePrint(order)} className="p-2 bg-gray-50 dark:bg-slate-800 rounded-xl text-indigo-600"><Printer size={18}/></button>
-              
-              {/* ڕاستڤەکرنا ئەڤی دوگمەی ل خوارێ */}
-              <button 
-                onClick={() => {
-                  if(window.confirm('ئەرێ تو دڵنیایی دێ ئەڤی ئۆردەری ژێببەی؟')) {
-                    deleteOrder(order.id);
-                  }
-                }} 
-                className="p-2 bg-red-50 dark:bg-red-900/20 text-red-500 rounded-xl hover:bg-red-100 transition-colors"
-              >
-                <Trash2 size={18}/>
-              </button>
-            </div>
-          </div>
-          
-          <div className="border-t dark:border-slate-800 py-3 space-y-2">
-            {order.items?.map((item, i) => (
-              <div key={i} className="flex items-center gap-3 bg-gray-50 dark:bg-slate-800/40 p-2 rounded-xl">
-                <img src={item.image} className="w-10 h-10 rounded-lg object-cover" />
-                <div className="flex-1 text-[10px] dark:text-gray-300">
-                  <p className="font-black">{item.name}</p>
-                  <p className="opacity-70">{item.selectedSize} | {item.selectedColor} | x{item.quantity}</p>
+            {orders?.map(order => (
+                <div key={order.id} className="bg-white dark:bg-slate-900 p-5 rounded-[2.5rem] border dark:border-slate-800 flex flex-wrap justify-between items-center shadow-sm hover:border-indigo-200 transition-all gap-4">
+                    <div className="flex gap-4 items-center">
+                        <div className="flex flex-col">
+                            <span className="text-[10px] font-black text-indigo-600 uppercase mb-1">
+                              {order.orderId ? order.orderId : `KID-${order.id?.slice(-5).toUpperCase()}`}
+                            </span>
+                            <h3 className="font-black dark:text-white text-sm">{order.customerName}</h3>
+                            <p className="text-[10px] text-gray-500 font-bold">{order.phone}</p>
+                        </div>
+                    </div>
+
+                    <div className="flex items-center gap-3">
+                      <select 
+                        value={order.status || 'چاڤەڕێیە'} 
+                        onChange={(e) => handleStatusChange(order.id, e.target.value)}
+                        className={`text-[10px] font-black px-3 py-2 rounded-xl border outline-none cursor-pointer transition-all ${
+                          statusConfig[order.status] ? statusConfig[order.status].color : 'bg-gray-50 text-gray-500 border-gray-100'
+                        }`}
+                      >
+                        <option value="چاڤەڕێیە">📦 چاڤەڕێیە</option>
+                        <option value="د ڕێدایە">🚚 د ڕێدایە</option>
+                        <option value="گەهشتییە">✅ گەهشتییە</option>
+                        <option value="هەڵوەشایە">❌ هەڵوەشایە</option>
+                      </select>
+
+                        <button onClick={() => setSelectedOrder(order)} className="p-3 bg-indigo-50 dark:bg-slate-800 rounded-2xl text-indigo-600 hover:bg-indigo-600 hover:text-white transition-all"><Printer size={18}/></button>
+                        <button onClick={() => window.confirm('ژێببەم؟') && deleteOrder(order.id)} className="p-3 bg-red-50 dark:bg-red-900/10 text-red-500 rounded-2xl hover:bg-red-500 hover:text-white transition-all"><Trash2 size={18}/></button>
+                    </div>
                 </div>
-              </div>
             ))}
           </div>
+        )}
+      </div>
 
-          <div className="flex justify-between items-center mt-3 pt-3 border-t dark:border-slate-800">
-            <p className="font-black text-indigo-600 text-sm">{order.totalPrice?.toLocaleString()} IQD</p>
-            <select 
-              value={order.status} 
-              onChange={(e) => updateOrderStatus(order.id, Number(e.target.value))} 
-              className="bg-gray-100 dark:bg-slate-800 text-[10px] p-2 rounded-xl dark:text-white outline-none"
-            >
-              <option value={1}>📦 چاوەڕێ</option>
-              <option value={2}>🚚 ل ڕێیێ</option>
-              <option value={3}>✅ گەهشت</option>
-            </select>
+      {/* Invoice Modal (وەک خۆی مایە، تەنها داتای فایەرستۆر وەردگریت) */}
+      {selectedOrder && (
+        <div className="fixed inset-0 z-[100] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-slate-900 w-full max-w-2xl rounded-[3rem] shadow-2xl overflow-hidden relative flex flex-col max-h-[90vh]">
+            <div className="p-4 border-b dark:border-slate-800 flex justify-between items-center bg-gray-50 dark:bg-slate-800">
+               <button onClick={() => setSelectedOrder(null)} className="p-2 bg-white dark:bg-slate-700 rounded-full dark:text-white shadow-sm hover:bg-red-50 hover:text-red-500 transition-colors">
+                 <X size={20}/>
+               </button>
+               <button onClick={() => handlePrint()} className="bg-emerald-500 text-white px-6 py-2.5 rounded-2xl font-black flex items-center gap-2 hover:bg-emerald-600 shadow-lg active:scale-95 transition-all">
+                 <Printer size={18}/> پرێنت کرن
+               </button>
+            </div>
+
+            <div className="p-10 text-right bg-white dark:bg-slate-900 overflow-y-auto" dir="rtl">
+                {/* لێرە لۆجیکێ نیشاندانا وەسڵێ (Preview) هەیە 
+                   پێدڤی ب گوهۆڕینێ نینە هەتا داتایێن selectedOrder د هەبن
+                */}
+                <div className="flex justify-between items-start mb-8 border-b-2 border-slate-100 dark:border-slate-800 pb-6">
+                  <div>
+                    <h1 className="text-3xl font-black text-indigo-600 mb-2 italic">وەسڵێ کڕینێ</h1>
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                      ORDER CODE: {selectedOrder.orderId}
+                    </p>
+                  </div>
+                  <div className="text-left font-bold text-slate-400 text-xs">
+                    مێژوو: {selectedOrder.date || new Date().toLocaleDateString('ku-IQ')}
+                  </div>
+                </div>
+
+                {/* زانیاریێن کڕیار */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+                  <div className="bg-slate-50 dark:bg-slate-800/50 p-6 rounded-[2rem] border border-slate-100 dark:border-slate-800">
+                    <p className="text-lg font-black mb-1 dark:text-white">{selectedOrder.customerName}</p>
+                    <p className="text-sm font-bold text-slate-600 dark:text-slate-400">{selectedOrder.phone}</p>
+                    <p className="text-xs text-slate-500 mt-2">{selectedOrder.address}</p>
+                  </div>
+                  <div className="bg-indigo-50 dark:bg-indigo-900/20 p-6 rounded-[2rem] border border-indigo-100">
+                    <div className="flex justify-between text-xl font-black text-indigo-600 dark:text-indigo-400 italic">
+                      <span>کۆیێ گشتی:</span> 
+                      <span>{selectedOrder.finalAmount?.toLocaleString()} IQD</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* خشتەی بەرهەمەکان */}
+                <table className="w-full text-right">
+                  <thead>
+                    <tr className="text-[10px] font-black text-slate-400 border-b">
+                      <th className="p-4">بەرهەم</th>
+                      <th className="p-4 text-center">ڕەنگ/سایز</th>
+                      <th className="p-4 text-center">دانە</th>
+                      <th className="p-4 text-left">بها</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(selectedOrder.cartItems || selectedOrder.items || []).map((item, idx) => (
+                      <tr key={idx} className="border-b dark:border-slate-800 dark:text-white">
+                        <td className="p-4 font-black text-sm">{item.name}</td>
+                        <td className="p-4 text-center text-xs">{item.selectedColor || '-'} / {item.selectedSize || '-'}</td>
+                        <td className="p-4 text-center font-black">x{item.quantity}</td>
+                        <td className="p-4 text-left font-black">{item.price?.toLocaleString()}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+            </div>
           </div>
         </div>
-      ))
-    ) : (
-      <div className="text-center py-20 text-gray-400 font-bold">چ ئۆردەر نینن</div>
-    )}
-  </div>
-)}
+      )}
+
+      {/* ⚠️ لادانی کێشەی "Nothing to Print" */}
+      <div style={{ display: 'none' }}>
+          <PrintInvoice ref={componentRef} order={selectedOrder} />
       </div>
 
       {isModalOpen && (
-        <div className="fixed inset-0 z-[100] bg-black/70 backdrop-blur-sm flex items-center justify-center p-0 sm:p-4 overflow-hidden">
-          <div className="bg-white dark:bg-slate-900 w-full max-w-3xl h-full sm:h-auto sm:max-h-[95vh] overflow-y-auto overflow-x-hidden rounded-none sm:rounded-[3rem] p-4 sm:p-10 shadow-2xl relative">
-            <button onClick={closeModal} className="absolute top-4 left-4 sm:top-6 sm:left-6 p-2 bg-gray-100 dark:bg-slate-800 rounded-full dark:text-white z-10"><X size={20}/></button>
-            <h2 className="text-lg sm:text-xl font-black dark:text-white mb-6 sm:mb-8 border-r-4 border-indigo-600 pr-4">{editingId ? 'دەستکارییا بەرهەمی' : 'زێدەکرنا بەرهەمی'}</h2>
-
-            <form onSubmit={async (e) => {
-              e.preventDefault(); setIsSubmitting(true);
-              const finalData = { ...formData, price: Number(formData.price), discount: Number(formData.discount), image: formData.images[0] || "" };
-              if(editingId) await updateProduct(editingId, finalData);
-              else await addProduct({...finalData, createdAt: new Date().toISOString()});
-              setIsSubmitting(false); closeModal();
-            }} className="space-y-6 sm:space-y-8 max-w-full">
-              
-              <div className="space-y-4">
-                <label className="text-xs font-black dark:text-white flex items-center gap-2"><Images size={16}/> وێنەیێن بەرهەمی</label>
-                <div className="flex flex-wrap gap-2 sm:gap-3">
-                  {formData.images.map((img, i) => (
-                    <div key={i} className="relative w-16 h-16 sm:w-20 sm:h-20 rounded-xl overflow-hidden border dark:border-slate-700 flex-shrink-0">
-                      <img src={img} className="w-full h-full object-cover" />
-                      <button type="button" onClick={() => setFormData({...formData, images: formData.images.filter((_, idx)=>idx!==i)})} className="absolute top-1 right-1 bg-red-500 text-white rounded-full p-0.5"><X size={12}/></button>
-                    </div>
-                  ))}
-                  <button type="button" onClick={() => galleryInputRef.current.click()} className="w-16 h-16 sm:w-20 sm:h-20 rounded-xl border-2 border-dashed border-gray-300 dark:border-slate-700 flex items-center justify-center text-gray-400 hover:bg-gray-50 flex-shrink-0"><Plus/></button>
-                </div>
-                <input type="file" ref={galleryInputRef} multiple onChange={(e) => {
-                  const files = Array.from(e.target.files);
-                  files.forEach(file => {
-                    const r = new FileReader(); r.onloadend = () => setFormData(p=>({...p, images: [...p.images, r.result]})); r.readAsDataURL(file);
-                  });
-                }} className="hidden" />
-              </div>
-
-              <div className="grid grid-cols-1 gap-4 sm:gap-6">
-                <div className="space-y-2">
-                  <label className="text-xs font-black mr-2 dark:text-gray-400 italic">ناڤێ بەرهەمی</label>
-                  <input required type="text" className="w-full p-3 sm:p-4 rounded-xl sm:rounded-2xl bg-gray-50 dark:bg-slate-800 dark:text-white outline-none" value={formData.name} onChange={e=>setFormData({...formData, name:e.target.value})} />
-                </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <label className="text-xs font-black mr-2 dark:text-gray-400 italic">بها</label>
-                    <input required type="number" className="w-full p-3 sm:p-4 rounded-xl sm:rounded-2xl bg-gray-50 dark:bg-slate-800 dark:text-white outline-none" value={formData.price} onChange={e=>setFormData({...formData, price:e.target.value})} />
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-xs font-black mr-2 dark:text-gray-400 italic">داشکاندن %</label>
-                    <input type="number" className="w-full p-3 sm:p-4 rounded-xl sm:rounded-2xl bg-gray-50 dark:bg-slate-800 dark:text-white outline-none text-red-500 font-bold" value={formData.discount} onChange={e=>setFormData({...formData, discount:e.target.value})} />
-                  </div>
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <label className="text-xs font-black mr-2 dark:text-gray-400 italic flex items-center gap-2"><Calendar size={14}/> مێژوو (Date)</label>
-                <input type="date" className="w-full p-3 sm:p-4 rounded-xl sm:rounded-2xl bg-gray-50 dark:bg-slate-800 dark:text-white outline-none" value={formData.expiryDate} onChange={e=>setFormData({...formData, expiryDate:e.target.value})} />
-              </div>
-
-              <div className="space-y-2">
-                <label className="text-xs font-black mr-2 dark:text-gray-400 italic">شیکارکرنا بەرهەمی (Description)</label>
-                <textarea rows="3" className="w-full p-3 sm:p-4 rounded-xl sm:rounded-2xl bg-gray-50 dark:bg-slate-800 dark:text-white outline-none" value={formData.description} onChange={e=>setFormData({...formData, description:e.target.value})} />
-              </div>
-
-              {/* Sizes Section */}
-              <div className="space-y-4 bg-gray-50 dark:bg-slate-800/50 p-4 sm:p-6 rounded-[1.5rem] sm:rounded-[2rem]">
-                <label className="text-xs font-black dark:text-white flex items-center gap-2"><Ruler size={16}/> سایز</label>
-                <div className="flex flex-wrap gap-2 mb-4">
-                  {allSizes.map(s => (
-                    <div key={s} className="relative group">
-                      <button type="button" onClick={() => setFormData(p=>({ ...p, sizes: p.sizes.includes(s) ? p.sizes.filter(x=>x!==s) : [...p.sizes, s] }))} className={`px-3 py-1.5 sm:px-4 sm:py-2 rounded-lg sm:rounded-xl text-[10px] sm:text-xs font-bold transition-all ${formData.sizes.includes(s) ? 'bg-indigo-600 text-white' : 'bg-white dark:bg-slate-700 dark:text-gray-400'}`}>
-                        {s}
-                      </button>
-                      {!clothesSizes.includes(s) && (
-                        <button type="button" onClick={() => setFormData(p=>({...p, sizes: p.sizes.filter(x=>x!==s)}))} className="absolute -top-1 -right-1 bg-red-500 text-white rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                          <X size={10}/>
-                        </button>
-                      )}
-                    </div>
-                  ))}
-                </div>
-                <div className="flex gap-2">
-                  <input type="text" placeholder="زێدەکرنا سایزێ دەستی..." className="flex-1 p-2.5 sm:p-3 rounded-lg sm:rounded-xl bg-white dark:bg-slate-700 dark:text-white outline-none text-[10px] sm:text-xs" value={customSize} onChange={e=>setCustomSize(e.target.value)} />
-                  <button type="button" onClick={()=>{if(customSize){setFormData(p=>({...p, sizes:[...p.sizes, customSize]})); setCustomSize("")}}} className="bg-slate-900 text-white px-3 sm:px-4 rounded-lg sm:rounded-xl text-[10px] sm:text-xs">Add</button>
-                </div>
-              </div>
-
-              {/* Colors Section */}
-              <div className="space-y-4 bg-gray-50 dark:bg-slate-800/50 p-4 sm:p-6 rounded-[1.5rem] sm:rounded-[2rem]">
-                <label className="text-xs font-black dark:text-white flex items-center gap-2"><Palette size={16}/> ڕەنگ</label>
-                <div className="flex flex-wrap gap-2 mb-4">
-                  {allColors.map(c => (
-                    <div key={c.name} className="relative group">
-                      <button type="button" onClick={() => setFormData(p=>({ ...p, colors: p.colors.includes(c.name) ? p.colors.filter(x=>x!==c.name) : [...p.colors, c.name] }))} className={`px-3 py-1.5 sm:px-4 sm:py-2 rounded-lg sm:rounded-xl text-[10px] sm:text-xs font-bold flex items-center gap-2 transition-all ${formData.colors.includes(c.name) ? 'ring-2 ring-indigo-600 bg-white' : 'bg-white dark:bg-slate-700 dark:text-gray-400'}`}>
-                        <span className="w-2.5 h-2.5 sm:w-3 sm:h-3 rounded-full border" style={{backgroundColor: c.code}}></span> {c.name}
-                      </button>
-                      {!readyColors.find(rc => rc.name === c.name) && (
-                        <button type="button" onClick={() => setFormData(p=>({...p, colors: p.colors.filter(x=>x!==c.name)}))} className="absolute -top-1 -right-1 bg-red-500 text-white rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                          <X size={10}/>
-                        </button>
-                      )}
-                    </div>
-                  ))}
-                </div>
-
-                {formData.colors.length > 0 && (
-                  <div className="space-y-3 mt-4">
-                    <label className="text-[10px] font-black dark:text-gray-400 italic">وێنەیێن ڕەنگان (هەر ڕەنگەک 10 وێنە):</label>
-                    <div className="grid grid-cols-1 gap-3">
-                      {formData.colors.map(cName => (
-                        <div key={cName} className="bg-white dark:bg-slate-800 p-3 rounded-xl border dark:border-slate-700">
-                          <div className="flex justify-between items-center mb-2">
-                            <span className="text-[10px] sm:text-xs font-bold flex items-center gap-1">
-                              <span className="w-2 h-2 rounded-full" style={{backgroundColor: allColors.find(ac=>ac.name===cName)?.code || '#888'}}></span> {cName}
-                            </span>
-                            <button type="button" onClick={() => { setActiveColorForImages(cName); colorImagesInputRef.current.click(); }} className="text-[8px] sm:text-[9px] bg-indigo-50 text-indigo-600 px-2 py-1 rounded-lg flex items-center gap-1">
-                              <UploadCloud size={10}/> ({formData.colorImages[cName]?.length || 0}/10)
-                            </button>
-                          </div>
-                          <div className="flex flex-wrap gap-1">
-                            {formData.colorImages[cName]?.map((img, idx) => (
-                              <div key={idx} className="relative w-8 h-8 rounded-md overflow-hidden border flex-shrink-0">
-                                <img src={img} className="w-full h-full object-cover" />
-                                <button type="button" onClick={() => setFormData(p => ({
-                                  ...p,
-                                  colorImages: { ...p.colorImages, [cName]: p.colorImages[cName].filter((_, i) => i !== idx) }
-                                }))} className="absolute top-0 right-0 bg-red-500 text-white rounded-full p-0.5"><X size={6}/></button>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-                
-                <input type="file" ref={colorImagesInputRef} multiple accept="image/*" onChange={handleColorImageUpload} className="hidden" />
-
-                <div className="flex gap-2">
-                  <input type="text" placeholder="ناڤێ ڕەنگی..." className="flex-1 p-2.5 sm:p-3 rounded-lg sm:rounded-xl bg-white dark:bg-slate-700 dark:text-white outline-none text-[10px] sm:text-xs" value={customColor.name} onChange={e=>setCustomColor({...customColor, name:e.target.value})} />
-                  <button type="button" onClick={()=>{if(customColor.name){setFormData(p=>({...p, colors:[...p.colors, customColor.name]})); setCustomColor({name:"", code:"#888888"})}}} className="bg-slate-900 text-white px-3 sm:px-4 rounded-lg sm:rounded-xl text-[10px] sm:text-xs">Add</button>
-                </div>
-              </div>
-
-              <button type="submit" disabled={isSubmitting} className="w-full py-4 sm:py-5 rounded-xl sm:rounded-[2rem] bg-indigo-600 text-white font-black shadow-xl shadow-indigo-500/30 flex items-center justify-center gap-2 text-sm sm:text-base">
-                {isSubmitting ? <Loader2 className="animate-spin"/> : <><Save size={20}/> پاشکەفتکرنا هەمی گوهۆڕینان</>}
-              </button>
-            </form>
-          </div>
-        </div>
+        <AddProduct 
+          closeModal={closeModal} 
+          onSave={handleSaveProduct} 
+          editingProduct={editingProduct} 
+        />
       )}
     </div>
   );
 };
 
 export default Admin;
+
+
+
+// import React, { useState, useContext, useRef } from 'react';
+// import { 
+//   Plus, Trash2, Edit2, Printer, MapPin, Phone, User, 
+//   ShieldCheck, Package, ListOrdered, ArrowRight, LogOut, X, CreditCard, Calendar,
+//   ArrowLeft
+// } from 'lucide-react';
+// import { ShopContext } from '../context/ShopContext';
+// import { useNavigate } from 'react-router-dom';
+// import AddProduct from './AddProduct';
+// import { useReactToPrint } from 'react-to-print';
+
+// const Admin = () => {
+//   const { products, addProduct, deleteProduct, updateProduct, orders, deleteOrder, logout } = useContext(ShopContext);
+//   const navigate = useNavigate();
+  
+//   const [activeTab, setActiveTab] = useState('products'); 
+//   const [isModalOpen, setIsModalOpen] = useState(false);
+//   const [editingProduct, setEditingProduct] = useState(null);
+//   const [selectedOrder, setSelectedOrder] = useState(null); // بۆ پیشاندانا وەسڵێ
+
+//   const componentRef = useRef();
+
+//   // لۆجیکێ پرێنتێ
+//   const handlePrint = useReactToPrint({
+//     content: () => componentRef.current,
+//     documentTitle: `Order-Details`,
+//   });
+
+//   const handleSaveProduct = async (data) => {
+//     if (editingProduct) {
+//       await updateProduct(editingProduct.id, data);
+//     } else {
+//       await addProduct({ ...data, createdAt: new Date().toISOString() });
+//     }
+//     closeModal();
+//   };
+
+//   const closeModal = () => {
+//     setIsModalOpen(false);
+//     setEditingProduct(null);
+//   };
+
+//   return (
+//     <div className="min-h-screen bg-gray-50 dark:bg-slate-950 pb-20 text-right font-sans" dir="rtl">
+      
+//       {/* Header */}
+//       <div className="bg-white dark:bg-slate-900 border-b dark:border-slate-800 sticky top-0 z-40 p-4">
+//         <div className="max-w-5xl mx-auto flex flex-col gap-4">
+//           <div className="flex justify-between items-center">
+//             <h1 className="text-lg font-black text-indigo-600 flex items-center gap-2">کۆنترۆلا دوکانێ <ShieldCheck size={20}/></h1>
+
+//             <div className="flex gap-2">
+//                 <button onClick={() => {localStorage.removeItem('isAdmin'); if(logout) logout(); navigate('/'); window.location.reload();}} className="px-3 py-2 bg-red-50 text-red-600 rounded-xl text-[10px] font-black flex items-center gap-1">دەرکەفتن<LogOut size={14}/></button>
+//                 <button onClick={() => navigate('/')} className="px-3 py-2 bg-slate-100 dark:bg-slate-800 rounded-xl text-[10px] font-black flex items-center gap-1 dark:text-white">زڤڕین<ArrowLeft size={14}/></button>
+//             </div>
+//           </div>
+          
+//           <div className="flex gap-2">
+//             <button onClick={() => setIsModalOpen(true)} className="bg-indigo-600 text-white p-3.5 rounded-2xl shadow-lg flex-shrink-0 active:scale-90 transition-all"><Plus size={20}/></button>
+//             <div className="flex gap-2 bg-gray-100 dark:bg-slate-800 p-1 rounded-2xl flex-1 text-[10px] font-black uppercase tracking-tighter">
+//               <button onClick={() => setActiveTab('products')} className={`flex-1 py-3 rounded-xl transition-all ${activeTab === 'products' ? 'bg-white dark:bg-slate-700 shadow text-indigo-600' : 'text-gray-500'}`}>بەرهەم ({products.length})</button>
+//               <button onClick={() => setActiveTab('orders')} className={`flex-1 py-3 rounded-xl transition-all ${activeTab === 'orders' ? 'bg-white dark:bg-slate-700 shadow text-indigo-600' : 'text-gray-500'}`}>کڕینەکان ({orders.length})</button>
+//             </div>
+//           </div>
+//         </div>
+//       </div>
+
+//       {/* Main Content */}
+//       <div className="max-w-5xl mx-auto p-4">
+//         {activeTab === 'products' ? (
+//           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+//             {products.map(p => (
+//               <div key={p.id} className="bg-white dark:bg-slate-900 p-4 rounded-[2rem] border dark:border-slate-800 flex gap-4 items-center group hover:shadow-xl transition-all">
+//                 <img src={p.images?.[0] || p.image} className="w-16 h-16 rounded-2xl object-cover border dark:border-slate-700" alt="" />
+//                 <div className="flex-1">
+//                   <h3 className="font-black text-sm dark:text-white truncate w-40">{p.name}</h3>
+//                   <p className="text-indigo-600 font-bold text-xs">{p.price?.toLocaleString()} IQD</p>
+//                 </div>
+//                 <div className="flex gap-1">
+//                   <button onClick={() => {setEditingProduct(p); setIsModalOpen(true);}} className="p-2 text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-xl transition-colors"><Edit2 size={16}/></button>
+//                   <button onClick={() => window.confirm('ئەرێ تو پشتڕاستی؟') && deleteProduct(p.id)} className="p-2 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-xl transition-colors"><Trash2 size={16}/></button>
+//                 </div>
+//               </div>
+//             ))}
+//           </div>
+//         ) : (
+//           <div className="space-y-4">
+//             {orders?.slice().reverse().map(order => (
+//                 <div key={order.id} className="bg-white dark:bg-slate-900 p-6 rounded-[2.5rem] border dark:border-slate-800 flex justify-between items-center shadow-sm hover:border-indigo-200 transition-all">
+//                     <div className="flex gap-4 items-center">
+//                         <div className="w-12 h-12 bg-indigo-50 dark:bg-indigo-900/20 rounded-2xl flex items-center justify-center text-indigo-600">
+//                            <User size={20}/>
+//                         </div>
+//                         <div>
+//                             <h3 className="font-black dark:text-white text-sm">{order.customerName}</h3>
+//                             <p className="text-[11px] text-gray-500 font-bold tracking-widest">{order.phone}</p>
+//                             <p className="text-[10px] text-emerald-500 font-bold flex items-center gap-1"><MapPin size={10}/> {order.address || 'لوکەیشن نەهاتیە'}</p>
+//                         </div>
+//                     </div>
+//                     <div className="flex gap-2">
+//                         <button onClick={() => setSelectedOrder(order)} className="p-3 bg-indigo-50 dark:bg-slate-800 rounded-2xl text-indigo-600 hover:bg-indigo-600 hover:text-white transition-all"><Printer size={18}/></button>
+//                         <button onClick={() => window.confirm('ژێببەم؟') && deleteOrder(order.id)} className="p-3 bg-red-50 dark:bg-red-900/10 text-red-500 rounded-2xl hover:bg-red-500 hover:text-white transition-all"><Trash2 size={18}/></button>
+//                     </div>
+//                 </div>
+//             ))}
+//           </div>
+//         )}
+//       </div>
+
+//       {/* Invoice Modal - ئەڤە پەنجەرەیا وەسڵێ یە */}
+//       {selectedOrder && (
+//         <div className="fixed inset-0 z-[100] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
+//           <div className="bg-white dark:bg-slate-900 w-full max-w-2xl rounded-[3rem] shadow-2xl overflow-hidden relative">
+            
+//             {/* Control Bar */}
+//             <div className="p-4 border-b flex justify-between items-center bg-gray-50 dark:bg-slate-800">
+//                <button onClick={() => setSelectedOrder(null)} className="p-2 bg-white dark:bg-slate-700 rounded-full dark:text-white shadow-sm"><X size={20}/></button>
+//                <button onClick={handlePrint} className="bg-emerald-500 text-white px-6 py-2.5 rounded-2xl font-black flex items-center gap-2 hover:bg-emerald-600 shadow-lg transition-all"><Printer size={18}/> پرێنت کرن</button>
+//             </div>
+
+//             {/* Content for Printing */}
+//             <div ref={componentRef} className="p-10 text-right bg-white" dir="rtl">
+//                 <style>{`@media print { body { direction: rtl; } .no-print { display: none; } }`}</style>
+//                 <div className="flex justify-between items-start mb-8 border-b-2 border-slate-100 pb-6">
+//                     <div>
+//                         <h1 className="text-3xl font-black text-indigo-600 mb-2 italic">وەسڵێ کڕینێ</h1>
+//                         <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest leading-none">Order ID: #{selectedOrder.id?.slice(-8)}</p>
+//                     </div>
+//                     <div className="text-left font-bold text-slate-400 text-xs">مێژوو: {new Date().toLocaleDateString('ku-IQ')}</div>
+//                 </div>
+
+//                 <div className="grid grid-cols-2 gap-6 mb-8">
+//                     <div className="bg-slate-50 p-6 rounded-[2rem]">
+//                         <h3 className="text-[10px] font-black text-slate-400 mb-3 flex items-center gap-2"><User size={12}/> زانیارییێن کڕیاری</h3>
+//                         <p className="text-lg font-black mb-1">{selectedOrder.customerName}</p>
+//                         <p className="text-sm font-bold text-slate-600 mb-1">{selectedOrder.phone}</p>
+//                         <p className="text-xs text-slate-500 font-medium">{selectedOrder.address}</p>
+//                     </div>
+//                     <div className="bg-indigo-50 p-6 rounded-[2rem] flex flex-col justify-center space-y-2">
+//                         <div className="flex justify-between text-xs font-bold text-indigo-400 uppercase"><span>بها:</span> <span>{selectedOrder.totalAmount?.toLocaleString()}</span></div>
+//                         <div className="flex justify-between text-xs font-bold text-red-400 uppercase"><span>داشکاندن:</span> <span>{selectedOrder.discount || 0}%</span></div>
+//                         <div className="h-px bg-indigo-100 my-1"></div>
+//                         <div className="flex justify-between text-xl font-black text-indigo-600 italic"><span>کۆتایی:</span> <span>{selectedOrder.finalAmount?.toLocaleString()} IQD</span></div>
+//                     </div>
+//                 </div>
+
+//                 <table className="w-full text-right mb-10">
+//                     <thead>
+//                         <tr className="bg-slate-50 text-[10px] font-black text-slate-400 border-b border-slate-100">
+//                             <th className="p-4 rounded-r-2xl">بەرهەم</th>
+//                             <th className="p-4 text-center">ڕەنگ / سایز</th>
+//                             <th className="p-4 text-center">دانە</th>
+//                             <th className="p-4 text-left rounded-l-2xl">بها</th>
+//                         </tr>
+//                     </thead>
+//                     <tbody className="divide-y divide-slate-50">
+//                         {selectedOrder.items?.map((item, idx) => (
+//                             <tr key={idx}>
+//                                 <td className="p-4">
+//                                     <div className="font-black text-sm">{item.name}</div>
+//                                 </td>
+//                                 <td className="p-4 text-center">
+//                                     <div className="flex items-center justify-center gap-2 text-[10px] font-bold text-slate-500 uppercase">
+//                                         <span>{item.size}</span>
+//                                         <span className="w-2 h-2 rounded-full border" style={{backgroundColor: item.colorCode}}></span>
+//                                     </div>
+//                                 </td>
+//                                 <td className="p-4 text-center font-black">x{item.quantity}</td>
+//                                 <td className="p-4 text-left font-black text-indigo-600">{item.price?.toLocaleString()} IQD</td>
+//                             </tr>
+//                         ))}
+//                     </tbody>
+//                 </table>
+
+//                 <div className="mt-20 flex justify-between px-10">
+//                    <div className="text-center"><div className="w-32 h-px bg-slate-200 mb-2"></div><p className="text-[10px] font-bold text-slate-300">واژوویا فرۆشیاری</p></div>
+//                    <div className="text-center"><div className="w-32 h-px bg-slate-200 mb-2"></div><p className="text-[10px] font-bold text-slate-300">واژوویا کڕیاری</p></div>
+//                 </div>
+//             </div>
+//           </div>
+//         </div>
+//       )}
+
+//       {/* Modal for Adding/Editing */}
+//       {isModalOpen && (
+//         <AddProduct 
+//           closeModal={closeModal} 
+//           onSave={handleSaveProduct} 
+//           editingProduct={editingProduct} 
+//         />
+//       )}
+//     </div>
+//   );
+// };
+
+// export default Admin;
