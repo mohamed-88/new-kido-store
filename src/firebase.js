@@ -6,9 +6,8 @@ import {
   OAuthProvider 
 } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
-import { getStorage } from "firebase/storage";
+import { getStorage } from "firebase/storage"; // بارکرنا خزمەتگوزاریا ستۆرێج بۆ وێنەیان
 
-// زانیاریێن پڕۆژێ تە یێ نوی یێ Firebase (kido-store-14e4e)
 const firebaseConfig = {
   apiKey: "AIzaSyD1o_1wnuhsxAumNQJkS-DcHHmTCCGH0kA",
   authDomain: "kido-store-14e4e.firebaseapp.com",
@@ -23,17 +22,23 @@ const firebaseConfig = {
 // Initialize Firebase
 export const firebaseApp = initializeApp(firebaseConfig);
 
-// Export کرنا خزمەتگوزاریێن پێدڤی
+// Initialize Services
 export const auth = getAuth(firebaseApp);
 export const db = getFirestore(firebaseApp);
-export const storage = getStorage(firebaseApp);
+export const storage = getStorage(firebaseApp); // ئەڤە بۆ وێنەیێن پڕۆفایلی پێدڤییە
 
-// Providers بۆ لۆگینێ (ئەگەر تە بڤێت بکاربینی)
+// Providers
 export const googleProvider = new GoogleAuthProvider();
+// ئەڤ دێرە دێ هاریکار بیت کو هەمی جاران پەنجەرا هەلبژارتنا جیمەیڵی بۆ یوزەری ڤەبیت
+googleProvider.setCustomParameters({ prompt: 'select_account' });
+
 export const facebookProvider = new FacebookAuthProvider();
 export const appleProvider = new OAuthProvider('apple.com');
 
+// زمانێ فایەربەیس دگەل زمانێ مۆبایل یان کۆمپیۆتەری ڕێک دێخیت
+auth.useDeviceLanguage();
 
+export default firebaseApp;
 
 
 
@@ -44,29 +49,30 @@ export const appleProvider = new OAuthProvider('apple.com');
 //   FacebookAuthProvider, 
 //   OAuthProvider 
 // } from "firebase/auth";
-// import { getFirestore } from "firebase/firestore"; // ✅ گوهۆڕین بۆ Firestore
+// import { getFirestore } from "firebase/firestore";
 // import { getStorage } from "firebase/storage";
 
-// // ئەڤە زانیاریێن پڕۆژێ تە یێ نوو نە (Kido Store)
+// // زانیاریێن پڕۆژێ تە یێ نوی یێ Firebase (kido-store-14e4e)
 // const firebaseConfig = {
-//   apiKey: "AIzaSyAXPn3CYkH-GDpjkLzPUiO6ewNrkgThT3U",
-//   authDomain: "kido-store-a2c3c.firebaseapp.com",
-//   projectId: "kido-store-a2c3c",
-//   storageBucket: "kido-store-a2c3c.firebasestorage.app",
-//   messagingSenderId: "874195532458",
-//   appId: "1:874195532458:web:dd6b0ba06f987ae5156ed3",
-//   measurementId: "G-2Z24Q5XR5M"
+//   apiKey: "AIzaSyD1o_1wnuhsxAumNQJkS-DcHHmTCCGH0kA",
+//   authDomain: "kido-store-14e4e.firebaseapp.com",
+//   databaseURL: "https://kido-store-14e4e-default-rtdb.firebaseio.com",
+//   projectId: "kido-store-14e4e",
+//   storageBucket: "kido-store-14e4e.firebasestorage.app",
+//   messagingSenderId: "635487282183",
+//   appId: "1:635487282183:web:38cc5c447cf534b1bc76a2",
+//   measurementId: "G-YEJN059SK3"
 // };
 
 // // Initialize Firebase
-// const app = initializeApp(firebaseConfig);
+// export const firebaseApp = initializeApp(firebaseConfig);
 
-// // Export کرنا خزمەتگوزارییان
-// export const auth = getAuth(app);
-// export const db = getFirestore(app); // ✅ نوکە db دێ ل سەر Firestore کار کەت
-// export const storage = getStorage(app);
+// // Export کرنا خزمەتگوزاریێن پێدڤی
+// export const auth = getAuth(firebaseApp);
+// export const db = getFirestore(firebaseApp);
+// export const storage = getStorage(firebaseApp);
 
-// // Providers بۆ لۆگینێ
+// // Providers بۆ لۆگینێ (ئەگەر تە بڤێت بکاربینی)
 // export const googleProvider = new GoogleAuthProvider();
 // export const facebookProvider = new FacebookAuthProvider();
 // export const appleProvider = new OAuthProvider('apple.com');
